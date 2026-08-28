@@ -1,9 +1,5 @@
 name: Docker Image CI
 on:
-  push:
-    branches: [ "main" ]
-  pull_request:
-    branches: [ "main" ]
   workflow_dispatch:
   schedule:
     - cron: '0 16 * * *' # UTC 16:00 = 北京时间 00:00
@@ -18,12 +14,10 @@ jobs:
         with:
           fetch-depth: 0
           token: ${{ secrets.PAT_SYNC }}
-
       - name: Git config
         run: |
           git config --global user.name "github‑actions[bot]"
           git config --global user.email "github‑actions[bot]@users.noreply.github.com"
-
       - name: Sync upstream fork & detect changes
         id: check_change
         run: |
@@ -36,7 +30,6 @@ jobs:
           if [ "$OLD_HEAD" != "$UPSTREAM_HEAD" ]; then
             echo "CHANGED=true" >> $GITHUB_OUTPUT
             echo "Upstream has new commits, syncing..."
-
             # rebase，冲突捕获
             if git rebase upstream/main; then
               echo "Rebase success"
@@ -52,28 +45,25 @@ jobs:
             echo "CHANGED=false" >> $GITHUB_OUTPUT
             echo "No new commits from upstream, skip sync"
           fi
-
       - name: Login to Docker Hub
+        if: steps.check_change.outputs.CHANGED == 'true'
         uses: docker/login-action@v3
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
-
       - name: Set up QEMU
+        if: steps.check_change.outputs.CHANGED == 'true'
         uses: docker/setup-qemu-action@v3
-
       - name: Set up Docker Buildx
+        if: steps.check_change.outputs.CHANGED == 'true'
         uses: docker/setup-buildx-action@v3
-
       - name: Generate image tag with Beijing time
         id: meta
+        if: steps.check_change.outputs.CHANGED == 'true'
         run: |
           echo "DATE_TAG=$(TZ='Asia/Shanghai' date +'%Y%m%d-%H%M')" >> $GITHUB_OUTPUT
-
       - name: Build and push
-        if: >
-          (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
-          || (github.event_name == 'schedule' && steps.check_change.outputs.CHANGED == 'true')
+        if: steps.check_change.outputs.CHANGED == 'true'
         uses: docker/build-push-action@v6
         with:
           context: .
