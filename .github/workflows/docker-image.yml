@@ -1,0 +1,79 @@
+name: Docker Image CI
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '0 16 * * *' # UTC 16:00 = 北京时间 00:00
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    outputs:
+      code_changed: ${{ steps.check_change.outputs.CHANGED }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.PAT_SYNC }}
+      - name: Git config
+        run: |
+          git config --global user.name "github‑actions[bot]"
+          git config --global user.email "github‑actions[bot]@users.noreply.github.com"
+      - name: Sync upstream fork & detect changes
+        id: check_change
+        run: |
+          git remote add upstream https://github.com/xxxscarlxrd404/qq-farm-bot.git
+          git fetch upstream
+          git checkout main
+          OLD_HEAD=$(git rev-parse HEAD)
+          UPSTREAM_HEAD=$(git rev-parse upstream/main)
+          
+          if [ "$OLD_HEAD" != "$UPSTREAM_HEAD" ]; then
+            echo "CHANGED=true" >> $GITHUB_OUTPUT
+            echo "Upstream has new commits, syncing..."
+            if git rebase upstream/main; then
+              echo "Rebase success"
+              git remote set-url origin https://${{ secrets.PAT_SYNC }}@github.com/${{ secrets.DOCKERHUB_USERNAME }}/qq-farm-bot.git
+              git push origin main --force-with-lease
+            else
+              echo "Rebase conflict! Abort rebase, skip sync this time."
+              git rebase --abort
+              echo "CHANGED=false" >> $GITHUB_OUTPUT
+            fi
+          else
+            echo "CHANGED=false" >> $GITHUB_OUTPUT
+            echo "No new commits from upstream, skip sync"
+          fi
+      - name: Login to Docker Hub
+        if: steps.check_change.outputs.CHANGED == 'true'
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+      - name: Set up QEMU
+        if: steps.check_change.outputs.CHANGED == 'true'
+        uses: docker/setup-qemu-action@v3
+      - name: Set up Docker Buildx
+        if: steps.check_change.outputs.CHANGED == 'true'
+        uses: docker/setup-buildx-action@v3
+      - name: Generate image tag with Beijing time
+        id: meta
+        if: steps.check_change.outputs.CHANGED == 'true'
+        run: |
+          echo "DATE_TAG=$(TZ='Asia/Shanghai' date +'%Y%m%d-%H%M')" >> $GITHUB_OUTPUT
+      - name: Build and push
+        if: steps.check_change.outputs.CHANGED == 'true'
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./core/Dockerfile
+          platforms: |
+            linux/amd64
+            linux/arm64
+          push: true
+          pull: true
+          tags: |
+            ${{ secrets.DOCKERHUB_USERNAME }}/qq-farm:latest
+            ${{ secrets.DOCKERHUB_USERNAME }}/qq-farm:${{ steps.meta.outputs.DATE_TAG }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
