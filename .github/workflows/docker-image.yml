@@ -19,30 +19,31 @@ jobs:
         run: |
           git config --global user.name "github‑actions[bot]"
           git config --global user.email "github‑actions[bot]@users.noreply.github.com"
-      - name: Sync upstream fork & detect changes
+      - name: Sync upstream fork & detect upstream new commits
         id: check_change
         run: |
-          git remote add upstream https://github.com/xxxscarlxrd404/qq-farm-bot.git
+          git remote add upstream https://github.com/xxxscarlxrd404/qq-farm-bot.git || true
           git fetch upstream
           git checkout main
-          OLD_HEAD=$(git rev-parse HEAD)
+
+          LOCAL_HEAD=$(git rev-parse HEAD)
           UPSTREAM_HEAD=$(git rev-parse upstream/main)
-          
-          if [ "$OLD_HEAD" != "$UPSTREAM_HEAD" ]; then
-            echo "CHANGED=true" >> $GITHUB_OUTPUT
-            echo "Upstream has new commits, syncing..."
-            if git rebase upstream/main; then
-              echo "Rebase success"
-              git remote set-url origin https://${{ secrets.PAT_SYNC }}@github.com/${{ secrets.DOCKERHUB_USERNAME }}/qq-farm-bot.git
-              git push origin main --force-with-lease
-            else
-              echo "Rebase conflict! Abort rebase, skip sync this time."
-              git rebase --abort
+
+          if git merge-base --is-ancestor "$UPSTREAM_HEAD" "$LOCAL_HEAD"; then
               echo "CHANGED=false" >> $GITHUB_OUTPUT
-            fi
+              echo "✅ Upstream no new commits, skip sync & build"
           else
-            echo "CHANGED=false" >> $GITHUB_OUTPUT
-            echo "No new commits from upstream, skip sync"
+              echo "CHANGED=true" >> $GITHUB_OUTPUT
+              echo "🔔 Upstream has new commits, start syncing..."
+              if git rebase upstream/main; then
+                echo "Rebase success"
+                git remote set-url origin https://${{ secrets.PAT_SYNC }}@github.com/${{ secrets.DOCKERHUB_USERNAME }}/qq-farm-bot.git
+                git push origin main --force-with-lease
+              else
+                echo "⚠️ Rebase conflict! Abort rebase, skip sync this time."
+                git rebase --abort
+                echo "CHANGED=false" >> $GITHUB_OUTPUT
+              fi
           fi
       - name: Login to Docker Hub
         if: steps.check_change.outputs.CHANGED == 'true'
