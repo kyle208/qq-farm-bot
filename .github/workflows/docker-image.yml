@@ -45,7 +45,7 @@ jobs:
               git checkout main
               if git rebase upstream/main; then
                 echo "✅ Rebase success"
-                git remote set-url origin https://${{ secrets.PAT_SYNC }}@github.com/${{ secrets.DOCKERHUB_USERNAME }}/qq-farm-bot.git
+                git remote set-url origin https://${{ secrets.PAT_SYNC }}@github.com/kyle208/qq-farm-bot.git
                 git push origin main --force-with-lease
               else
                 echo "⚠️ Rebase conflict! Abort rebase, skip sync and docker build."
