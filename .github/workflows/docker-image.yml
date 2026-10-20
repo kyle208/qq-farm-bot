@@ -30,29 +30,21 @@ jobs:
         run: |
           git remote add upstream https://github.com/BUGDey/qq-farm-bot.git || true
           git fetch upstream
-
           LOCAL_HEAD=$(git rev-parse HEAD)
           UPSTREAM_HEAD=$(git rev-parse upstream/main)
           echo "LOCAL_HEAD: $LOCAL_HEAD"
           echo "UPSTREAM_HEAD: $UPSTREAM_HEAD"
-
-          if git merge-base --is-ancestor "$UPSTREAM_HEAD" "$LOCAL_HEAD"; then
-              echo "CHANGED=false" >> $GITHUB_OUTPUT
-              echo "✅ Upstream no new commits, skip sync & build"
-          else
-              echo "CHANGED=true" >> $GITHUB_OUTPUT
-              echo "🔔 Upstream has new commits, start syncing..."
-              git checkout main
-              if git rebase upstream/main; then
-                echo "✅ Rebase success"
-                git remote set-url origin https://${{ secrets.PAT_SYNC }}@github.com/kyle208/qq-farm-bot.git
-                git push origin main --force-with-lease
-              else
-                echo "⚠️ Rebase conflict! Abort rebase, skip sync and docker build."
-                git rebase --abort
-                echo "CHANGED=false" >> $GITHUB_OUTPUT
-              fi
+          if [ "$LOCAL_HEAD" = "$UPSTREAM_HEAD" ]; then
+            echo "No new commits"
+            exit 0
           fi
+          echo "🔔 Upstream has new commits, start syncing..."
+          git checkout main
+          git rebase upstream/main
+          echo "✅ Rebase success"
+          git remote set-url origin https://${{ secrets.PAT_SYNC }}@github.com/${{ secrets.DOCKERHUB_USERNAME }}/qq-farm-bot.git
+          git remote -v
+          git push origin main --force
 
       - name: Login to Docker Hub
         if: steps.check_change.outputs.CHANGED == 'true'
